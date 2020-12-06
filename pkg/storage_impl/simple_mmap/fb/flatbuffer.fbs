@@ -1,0 +1,9 @@
+namespace fb;
+
+table StorageObj {
+  isDeleted:bool;
+  key:[ubyte];
+  value:[ubyte];
+}
+
+root_type StorageObj;
