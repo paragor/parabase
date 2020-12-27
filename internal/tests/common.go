@@ -13,7 +13,6 @@ import (
 
 func GenerateCleanTmpFilePath(t testing.TB, name string) (string, error) {
 	databasePath := path.Join(os.TempDir(), name+"__"+strconv.Itoa(rand.Int()))
-	t.Log(databasePath)
 	_, err := os.Stat(databasePath)
 	if !os.IsNotExist(err) {
 		return databasePath, os.Remove(databasePath)

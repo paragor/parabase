@@ -1,6 +1,6 @@
 module github.com/paragor/parabase
 
-go 1.14
+go 1.15
 
 require (
 	github.com/edsrzf/mmap-go v1.0.0

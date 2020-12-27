@@ -8,13 +8,20 @@ import (
 	"github.com/paragor/parabase/pkg/engine"
 )
 
+type BenchTimeTrackOption string
 
-func SeqWriteAndReadBench(b *testing.B, storage engine.StorageEngine, keysCount int) {
+const (
+	OnlyReadOption     BenchTimeTrackOption = "read_"
+	OnlyWriteOption                         = "write_"
+	WriteAndReadOption                      = "write_and_read"
+)
+
+func SeqWriteAndReadBench(b *testing.B, storage engine.StorageEngine, keysCount int, option BenchTimeTrackOption) {
 	kvChecker := tests.NewKeyValueChecker()
 
 	b.ResetTimer()
-	b.Run("write", func(b *testing.B) {
-		b.StartTimer()
+	b.StartTimer()
+	writeFunction := func() {
 		for i := 0; i < keysCount; i++ {
 			key := []byte("key" + strconv.Itoa(i))
 			err := storage.Set(key, kvChecker.GenValue(key))
@@ -23,11 +30,8 @@ func SeqWriteAndReadBench(b *testing.B, storage engine.StorageEngine, keysCount 
 				return
 			}
 		}
-		b.StopTimer()
-	})
-
-	b.Run("read", func(b *testing.B) {
-		b.StartTimer()
+	}
+	readFunction := func () {
 		for i := 0; i < keysCount; i++ {
 			key := []byte("key" + strconv.Itoa(i))
 			value, err := storage.Get(key)
@@ -40,7 +44,24 @@ func SeqWriteAndReadBench(b *testing.B, storage engine.StorageEngine, keysCount 
 				return
 			}
 		}
+	}
+	switch option {
+	case OnlyReadOption:
+		writeFunction()
+		b.ResetTimer()
+		b.StartTimer()
+		readFunction()
 		b.StopTimer()
-	})
+	case OnlyWriteOption:
+		b.ResetTimer()
+		b.StartTimer()
+		writeFunction()
+		b.StopTimer()
+	case WriteAndReadOption:
+		b.ResetTimer()
+		b.StartTimer()
+		writeFunction()
+		readFunction()
+		b.StopTimer()
+	}
 }
-
