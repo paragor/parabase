@@ -16,8 +16,10 @@ import (
 // TODO
 
 type Storage struct {
-	file *os.File
-	mmap mmap.MMap
+	file      *os.File
+	mmap      mmap.MMap
+	index     map[string]uint64
+	maxOffset uint64
 }
 
 func check(err error) {
@@ -51,35 +53,35 @@ func NewStorage(filePath string) (*Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant mmap database file: %w", err)
 	}
-	return &Storage{file: file, mmap: mmapObj}, nil
+	storage := &Storage{file: file, mmap: mmapObj, index: map[string]uint64{}}
+	err = storage.updateIndex()
+	return storage, err
+}
+func (s *Storage) updateIndex() error {
+	return s.iterate(func(offset uint64, node simpleNode) bool {
+		s.maxOffset = offset + node.meta.getNodeSize()
+		s.index[string(node.key)] = offset
+		return false
+	}, false)
 }
 
 func (s *Storage) Set(key, value []byte) error {
-	offset := uint64(0)
-	var innerErr error = nil
-	hash := hashKey(key)
-	err := s.iterate(func(curOffset uint64, node simpleNode) bool {
-		if !node.meta.IsDeleted && node.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, node.key) {
-			innerErr = s.deleteByOffset(curOffset)
-			if innerErr != nil {
-				return true
-			}
-		}
-		offset += node.meta.getNodeSize()
-		return false
-	}, false)
+	err := s.Delete(key)
 	if err != nil {
 		return err
 	}
-	if innerErr != nil {
-		return innerErr
-	}
+	offset := s.maxOffset
 	node := simpleNode{}
 	node.SetKey(key)
 	node.SetValue(value)
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
-	return node.Write(buffer)
+	err = node.Write(buffer)
+	if err == nil {
+		s.index[string(key)] = offset
+		s.maxOffset = offset + node.meta.getNodeSize()
+	}
+	return err
 }
 
 // iterate
@@ -128,44 +130,30 @@ func (s *Storage) iterate(iterator func(offset uint64, node simpleNode) bool, wi
 }
 
 func (s *Storage) Get(key []byte) ([]byte, error) {
-	var value []byte
-	found := false
-	hash := hashKey(key)
-	err := s.iterate(func(offset uint64, node simpleNode) bool {
-		if !node.meta.IsDeleted && node.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, node.key) {
-			value = make([]byte, node.meta.ValueSize)
-			copy(value, node.value)
-			found = true
-			return true
-		}
-		return false
-	}, false)
+	offset, ok := s.index[string(key)]
+	if !ok {
+		return nil, engine.ErrorNotFound
+	}
+
+	node := simpleNode{}
+	reader := bytes.NewReader(nil)
+
+	reader.Reset(s.mmap[offset:])
+	err := node.Read(reader)
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		return nil, engine.ErrorNotFound
+	if !node.meta.isValid() {
+		return nil, nil
 	}
-	return value, nil
+	return node.value, nil
 }
 func (s *Storage) Delete(key []byte) error {
-	offset := uint64(0)
-	found := false
-	hash := hashKey(key)
-	err := s.iterate(func(curOffset uint64, curNode simpleNode) bool {
-		if !curNode.meta.IsDeleted && curNode.meta.KeySize == uint64(len(key)) && hash == curNode.meta.KeyCRC32 && bytes.Equal(key, curNode.key) {
-			offset = curOffset
-			found = true
-			return true
-		}
-		return false
-	}, false)
-	if err != nil {
-		return err
-	}
-	if !found {
+	offset, ok := s.index[string(key)]
+	if !ok {
 		return nil
 	}
+	delete(s.index, string(key))
 	return s.deleteByOffset(offset)
 }
 func (s *Storage) deleteByOffset(offset uint64) error {
