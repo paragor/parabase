@@ -55,13 +55,12 @@ func NewStorage(filePath string) (*Storage, error) {
 }
 
 func (s *Storage) Set(key, value []byte) error {
-	node := simpleNode{}
 	offset := uint64(0)
 	var innerErr error = nil
 	hash := hashKey(key)
 	err := s.iterate(func(curOffset uint64, node simpleNode) bool {
 		if !node.meta.IsDeleted && node.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, node.key) {
-			innerErr = s.Delete(key)
+			innerErr = s.deleteByOffset(curOffset)
 			if innerErr != nil {
 				return true
 			}
@@ -75,6 +74,7 @@ func (s *Storage) Set(key, value []byte) error {
 	if innerErr != nil {
 		return innerErr
 	}
+	node := simpleNode{}
 	node.SetKey(key)
 	node.SetValue(value)
 	buffer := bytes.NewBuffer(s.mmap[offset:])
@@ -149,13 +149,11 @@ func (s *Storage) Get(key []byte) ([]byte, error) {
 	return value, nil
 }
 func (s *Storage) Delete(key []byte) error {
-	node := simpleNode{}
 	offset := uint64(0)
 	found := false
 	hash := hashKey(key)
 	err := s.iterate(func(curOffset uint64, curNode simpleNode) bool {
-		if !curNode.meta.IsDeleted && curNode.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, curNode.key) {
-			node = curNode
+		if !curNode.meta.IsDeleted && curNode.meta.KeySize == uint64(len(key)) && hash == curNode.meta.KeyCRC32 && bytes.Equal(key, curNode.key) {
 			offset = curOffset
 			found = true
 			return true
@@ -166,6 +164,20 @@ func (s *Storage) Delete(key []byte) error {
 		return err
 	}
 	if !found {
+		return nil
+	}
+	return s.deleteByOffset(offset)
+}
+func (s *Storage) deleteByOffset(offset uint64) error {
+	node := simpleNode{}
+	err := node.ReadMeta(bytes.NewReader(s.mmap[offset:]))
+	if err != nil {
+		return err
+	}
+	if !node.meta.isValid() {
+		return fmt.Errorf("invalid node for delete")
+	}
+	if node.meta.IsDeleted {
 		return nil
 	}
 	node.Delete()

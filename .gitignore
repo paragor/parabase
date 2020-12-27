@@ -1,2 +1,5 @@
 .idea/
 .vscode/
+
+profile.out
+simple_mmap.test
