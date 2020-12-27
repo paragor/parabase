@@ -2,18 +2,18 @@ package simple_mmap
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
 	"strings"
-	"unsafe"
 
 	"github.com/edsrzf/mmap-go"
-	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/paragor/parabase/pkg/engine"
-	"github.com/paragor/parabase/pkg/storage_impl/simple_mmap/fb"
 )
+
+// TODO
+// TODO 1) set value: cant read meta: unexpected EOF - когда вышли за размер файла
+// TODO
 
 type Storage struct {
 	file *os.File
@@ -55,66 +55,121 @@ func NewStorage(filePath string) (*Storage, error) {
 }
 
 func (s *Storage) Set(key, value []byte) error {
-	offset := uint32(0)
-	for newOffset, obj, err := s.findFbObj(key, offset); err != engine.NotFoundError; {
-		obj.MutateIsDeleted(true)
-		offset = newOffset + uint32(obj.ValueLength()) + storageObjSize
+	node := simpleNode{}
+	offset := uint64(0)
+	var innerErr error = nil
+	hash := hashKey(key)
+	err := s.iterate(func(curOffset uint64, node simpleNode) bool {
+		if !node.meta.IsDeleted && node.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, node.key) {
+			innerErr = s.Delete(key)
+			if innerErr != nil {
+				return true
+			}
+		}
+		offset += node.meta.getNodeSize()
+		return false
+	}, false)
+	if err != nil {
+		return err
 	}
-	builder := flatbuffers.NewBuilder(0)
-	valPos := builder.CreateByteVector(value)
-	keyPos := builder.CreateByteVector(key)
+	if innerErr != nil {
+		return innerErr
+	}
+	node.SetKey(key)
+	node.SetValue(value)
+	buffer := bytes.NewBuffer(s.mmap[offset:])
+	buffer.Reset()
+	return node.Write(buffer)
+}
 
-	fb.StorageObjStart(builder)
-	fb.StorageObjAddKey(builder, keyPos)
-	fb.StorageObjAddValue(builder, valPos)
-	builder.Finish(fb.StorageObjEnd(builder))
-	result := builder.FinishedBytes()
+// iterate
+//          iterator - возвращает true когда нужно остановится
+//          withDefence - true - копировать память в буфер (замедляет в 2 раза изза лишних аллокаций)
+//                      - false - передавать key, value прям из mmap
+func (s *Storage) iterate(iterator func(offset uint64, node simpleNode) bool, withDefence bool) error {
+	offset := uint64(0)
+	end := uint64(len(s.mmap))
 
-	offset += uint32(binary.PutUvarint(s.mmap[offset:], uint64(len(result))))
+	node := simpleNode{}
+	reader := bytes.NewReader(nil)
 
-	copy(s.mmap[offset:], builder.FinishedBytes())
+	for offset < end {
+		reader.Reset(s.mmap[offset:])
+		if withDefence {
+			err := node.Read(reader)
+			if err != nil {
+				return err
+			}
+			if !node.meta.isValid() {
+				return nil
+			}
+		} else {
+			err := node.ReadMeta(reader)
+			if err != nil {
+				return err
+			}
+			if !node.meta.isValid() {
+				return nil
+			}
+			if end < offset+node.meta.getNodeSize() {
+				return fmt.Errorf("read value too low (no def)")
+			}
+			node.key = s.mmap[offset+node.meta.getMetaSize() : offset+node.meta.getValueOffset()]
+			node.value = s.mmap[offset+node.meta.getValueOffset() : offset+node.meta.getNodeSize()]
+		}
+		if iterator(offset, node) {
+			return nil
+		}
+
+		offset += node.meta.getNodeSize()
+	}
 
 	return nil
 }
 
 func (s *Storage) Get(key []byte) ([]byte, error) {
-	_, obj, err := s.findFbObj(key, 0)
+	var value []byte
+	found := false
+	hash := hashKey(key)
+	err := s.iterate(func(offset uint64, node simpleNode) bool {
+		if !node.meta.IsDeleted && node.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, node.key) {
+			value = make([]byte, node.meta.ValueSize)
+			copy(value, node.value)
+			found = true
+			return true
+		}
+		return false
+	}, false)
 	if err != nil {
 		return nil, err
 	}
-
-	return obj.ValueBytes(), nil
-}
-
-var storageObjSize = uint32(unsafe.Sizeof(fb.StorageObj{}))
-
-func (s *Storage) findFbObj(key []byte, startOffset uint32) (offset uint32, obj *fb.StorageObj, err error) {
-	offset = startOffset
-
-	for offset+storageObjSize < uint32(len(s.mmap)) {
-		reader := bytes.NewReader(s.mmap[offset:])
-		prev := reader.Len()
-		metaOffset, err := binary.ReadUvarint(reader)
-		if err != nil {
-			return 0, nil, engine.NotFoundError
-		}
-		sizeOfUint := uint32(prev - reader.Len())
-		obj = fb.GetRootAsStorageObj(s.mmap, flatbuffers.UOffsetT(offset+sizeOfUint))
-		if metaOffset == 0 {
-			return 0, nil, engine.NotFoundError
-		}
-		if obj.IsDeleted() {
-			continue
-		}
-
-		if bytes.Compare(obj.KeyBytes(), key) == 0 {
-			return offset, obj, nil
-		}
-		offset += uint32(metaOffset) + sizeOfUint
+	if !found {
+		return nil, engine.ErrorNotFound
 	}
-
-	return 0, nil, engine.NotFoundError
+	return value, nil
 }
-func (s *Storage) calculateTotalSize(obj *fb.StorageObj) uint32 {
-	return storageObjSize + uint32(obj.KeyLength()+obj.ValueLength())
+func (s *Storage) Delete(key []byte) error {
+	node := simpleNode{}
+	offset := uint64(0)
+	found := false
+	hash := hashKey(key)
+	err := s.iterate(func(curOffset uint64, curNode simpleNode) bool {
+		if !curNode.meta.IsDeleted && curNode.meta.KeySize == uint64(len(key)) && hash == node.meta.KeyCRC32 && bytes.Equal(key, curNode.key) {
+			node = curNode
+			offset = curOffset
+			found = true
+			return true
+		}
+		return false
+	}, false)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	node.Delete()
+	buffer := bytes.NewBuffer(s.mmap[offset:])
+	buffer.Reset()
+	return node.WriteMeta(buffer)
 }

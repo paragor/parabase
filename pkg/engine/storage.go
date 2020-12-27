@@ -5,11 +5,12 @@ import (
 )
 
 var (
-	NotFoundError = errors.New("object not found")
+	ErrorNotFound = errors.New("object not found")
 )
 
 type StorageEngine interface {
 	Set(key, value []byte) error
 	Get(key []byte) ([]byte, error)
+	Delete(key []byte) error
 	Close()
 }
