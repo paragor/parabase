@@ -235,7 +235,7 @@ func (s *Storage) deleteByOffset(offset uint64) error {
 	node.Delete()
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
-	err =  node.WriteMeta(buffer)
+	err = node.WriteMeta(buffer)
 	if err != nil {
 		return err
 	}

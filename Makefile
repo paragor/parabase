@@ -15,3 +15,7 @@ bench:
 .PHONY: bench-%
 bench-%:
 	go test ./... -bench=$* -benchmem
+
+.PHONY: bench_onecore-%
+bench_onecore-%:
+	go test ./... -bench=$* -benchmem -cpu=1

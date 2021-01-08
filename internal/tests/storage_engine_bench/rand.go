@@ -57,7 +57,7 @@ func RandWriteAndReadBench(b *testing.B, storage engine.StorageEngine, keysCount
 		end := time.Now()
 		secondsDur := end.Sub(start).Seconds()
 		if logResults {
-			b.Logf("[WRTIE] OP/s [%d] (%2f s)", int(float64(keysCount)/secondsDur), secondsDur)
+			b.Logf("[READ] OP/s [%d] (%2f s)", int(float64(keysCount)/secondsDur), secondsDur)
 		}
 	}
 

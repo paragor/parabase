@@ -7,7 +7,7 @@ import (
 )
 
 func Test_WriteAndRead(t *testing.T) {
-	storage,  err := NewStorage()
+	storage, err := NewStorage()
 	if err != nil {
 		t.Error(err)
 		return
@@ -16,11 +16,10 @@ func Test_WriteAndRead(t *testing.T) {
 }
 
 func Test_Delete(t *testing.T) {
-	storage,  err := NewStorage()
+	storage, err := NewStorage()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	storage_engine_tests.DeleteOperationsTest(t, storage)
 }
-

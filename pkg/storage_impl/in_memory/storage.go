@@ -10,10 +10,10 @@ import (
 )
 
 type Storage struct {
-	data []byte
+	data      []byte
 	index     map[string]uint64
 	maxOffset uint64
-	m    sync.RWMutex
+	m         sync.RWMutex
 }
 
 func (s *Storage) Close() {
