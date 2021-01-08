@@ -1,4 +1,4 @@
-package simple_mmap
+package primitive_mmap
 
 import (
 	"bytes"
@@ -10,8 +10,8 @@ import (
 	"github.com/paragor/parabase/pkg/engine"
 )
 
-func createSimpleMmapStorage(t testing.TB, name string) (storage engine.StorageEngine, cleanRes func(), err error) {
-	databasePath, err := tests.GenerateCleanTmpFilePath(t, "simple_mmap"+name)
+func createPrimitiveMmapStorage(t testing.TB, name string) (storage engine.StorageEngine, cleanRes func(), err error) {
+	databasePath, err := tests.GenerateCleanTmpFilePath(t, "primitive_mmap"+name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -23,7 +23,7 @@ func createSimpleMmapStorage(t testing.TB, name string) (storage engine.StorageE
 }
 
 func Test_WriteAndRead(t *testing.T) {
-	storage, cleanRes, err := createSimpleMmapStorage(t, "write_and_read_test")
+	storage, cleanRes, err := createPrimitiveMmapStorage(t, "write_and_read_test")
 	if err != nil {
 		t.Error(err)
 		return
@@ -33,7 +33,7 @@ func Test_WriteAndRead(t *testing.T) {
 }
 
 func Test_Delete(t *testing.T) {
-	storage, cleanRes, err := createSimpleMmapStorage(t, "delete_test")
+	storage, cleanRes, err := createPrimitiveMmapStorage(t, "delete_test")
 	if err != nil {
 		t.Error(err)
 		return
@@ -43,7 +43,7 @@ func Test_Delete(t *testing.T) {
 }
 
 func Test_Recreate(t *testing.T) {
-	databasePath, err := tests.GenerateCleanTmpFilePath(t, "simple_mmap_test_recreate")
+	databasePath, err := tests.GenerateCleanTmpFilePath(t, "primitive_mmap_test_recreate")
 	if err != nil {
 		t.Error(err)
 		return

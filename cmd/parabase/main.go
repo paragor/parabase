@@ -6,13 +6,13 @@ import (
 	"path"
 
 	"github.com/paragor/parabase/pkg/serverd"
-	"github.com/paragor/parabase/pkg/storage_impl/simple_mmap"
+	"github.com/paragor/parabase/pkg/storage_impl/with_hashtable_index_mmap"
 )
 
 func main() {
 	log.Println("starting...")
 
-	engine, err := simple_mmap.NewStorage(path.Join(os.TempDir(), "parabase.db"))
+	engine, err := with_hashtable_index_mmap.NewStorage(path.Join(os.TempDir(), "parabase.db"))
 	if err != nil {
 		log.Fatalf("cant create engine: %s", err.Error())
 	}

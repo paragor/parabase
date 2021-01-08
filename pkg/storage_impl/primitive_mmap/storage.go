@@ -1,4 +1,4 @@
-package simple_mmap
+package primitive_mmap
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/edsrzf/mmap-go"
 	"github.com/paragor/parabase/pkg/engine"
+	"github.com/paragor/parabase/pkg/storage_node/simple_node"
 )
 
 // TODO
@@ -16,10 +17,8 @@ import (
 // TODO
 
 type Storage struct {
-	file      *os.File
-	mmap      mmap.MMap
-	index     map[string]uint64
-	maxOffset uint64
+	file *os.File
+	mmap mmap.MMap
 }
 
 func check(err error) {
@@ -53,46 +52,45 @@ func NewStorage(filePath string) (*Storage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant mmap database file: %w", err)
 	}
-	storage := &Storage{file: file, mmap: mmapObj, index: map[string]uint64{}}
-	err = storage.updateIndex()
-	return storage, err
-}
-func (s *Storage) updateIndex() error {
-	return s.iterate(func(offset uint64, node simpleNode) bool {
-		s.maxOffset = offset + node.meta.getNodeSize()
-		s.index[string(node.key)] = offset
-		return false
-	}, false)
+	return &Storage{file: file, mmap: mmapObj}, nil
 }
 
 func (s *Storage) Set(key, value []byte) error {
-	err := s.Delete(key)
+	offset := uint64(0)
+	var innerErr error = nil
+	err := s.iterate(func(curOffset uint64, node simple_node.SimpleNode) bool {
+		if !node.Meta.IsDeleted && node.Meta.KeySize == uint64(len(key)) && bytes.Equal(key, node.Key) {
+			innerErr = s.deleteByOffset(curOffset)
+			if innerErr != nil {
+				return true
+			}
+		}
+		offset += node.Meta.GetNodeSize()
+		return false
+	}, false)
 	if err != nil {
 		return err
 	}
-	offset := s.maxOffset
-	node := simpleNode{}
+	if innerErr != nil {
+		return innerErr
+	}
+	node := simple_node.SimpleNode{}
 	node.SetKey(key)
 	node.SetValue(value)
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
-	err = node.Write(buffer)
-	if err == nil {
-		s.index[string(key)] = offset
-		s.maxOffset = offset + node.meta.getNodeSize()
-	}
-	return err
+	return node.Write(buffer)
 }
 
 // iterate
 //          iterator - возвращает true когда нужно остановится
 //          withDefence - true - копировать память в буфер (замедляет в 2 раза изза лишних аллокаций)
 //                      - false - передавать key, value прям из mmap
-func (s *Storage) iterate(iterator func(offset uint64, node simpleNode) bool, withDefence bool) error {
+func (s *Storage) iterate(iterator func(offset uint64, node simple_node.SimpleNode) bool, withDefence bool) error {
 	offset := uint64(0)
 	end := uint64(len(s.mmap))
 
-	node := simpleNode{}
+	node := simple_node.SimpleNode{}
 	reader := bytes.NewReader(nil)
 
 	for offset < end {
@@ -102,7 +100,7 @@ func (s *Storage) iterate(iterator func(offset uint64, node simpleNode) bool, wi
 			if err != nil {
 				return err
 			}
-			if !node.meta.isValid() {
+			if !node.Meta.IsValid() {
 				return nil
 			}
 		} else {
@@ -110,62 +108,74 @@ func (s *Storage) iterate(iterator func(offset uint64, node simpleNode) bool, wi
 			if err != nil {
 				return err
 			}
-			if !node.meta.isValid() {
+			if !node.Meta.IsValid() {
 				return nil
 			}
-			if end < offset+node.meta.getNodeSize() {
+			if end < offset+node.Meta.GetNodeSize() {
 				return fmt.Errorf("read value too low (no def)")
 			}
-			node.key = s.mmap[offset+node.meta.getMetaSize() : offset+node.meta.getValueOffset()]
-			node.value = s.mmap[offset+node.meta.getValueOffset() : offset+node.meta.getNodeSize()]
+			node.Key = s.mmap[offset+node.Meta.GetMetaSize() : offset+node.Meta.GetValueOffset()]
+			node.Value = s.mmap[offset+node.Meta.GetValueOffset() : offset+node.Meta.GetNodeSize()]
 		}
 		if iterator(offset, node) {
 			return nil
 		}
 
-		offset += node.meta.getNodeSize()
+		offset += node.Meta.GetNodeSize()
 	}
 
 	return nil
 }
 
 func (s *Storage) Get(key []byte) ([]byte, error) {
-	offset, ok := s.index[string(key)]
-	if !ok {
-		return nil, engine.ErrorNotFound
-	}
-
-	node := simpleNode{}
-	reader := bytes.NewReader(nil)
-
-	reader.Reset(s.mmap[offset:])
-	err := node.Read(reader)
+	var value []byte
+	found := false
+	err := s.iterate(func(offset uint64, node simple_node.SimpleNode) bool {
+		if !node.Meta.IsDeleted && node.Meta.KeySize == uint64(len(key)) && bytes.Equal(key, node.Key) {
+			value = make([]byte, node.Meta.ValueSize)
+			copy(value, node.Value)
+			found = true
+			return true
+		}
+		return false
+	}, false)
 	if err != nil {
 		return nil, err
 	}
-	if !node.meta.isValid() {
-		return nil, nil
+	if !found {
+		return nil, engine.ErrorNotFound
 	}
-	return node.value, nil
+	return value, nil
 }
 func (s *Storage) Delete(key []byte) error {
-	offset, ok := s.index[string(key)]
-	if !ok {
+	offset := uint64(0)
+	found := false
+	err := s.iterate(func(curOffset uint64, curNode simple_node.SimpleNode) bool {
+		if !curNode.Meta.IsDeleted && curNode.Meta.KeySize == uint64(len(key)) && bytes.Equal(key, curNode.Key) {
+			offset = curOffset
+			found = true
+			return true
+		}
+		return false
+	}, false)
+	if err != nil {
+		return err
+	}
+	if !found {
 		return nil
 	}
-	delete(s.index, string(key))
 	return s.deleteByOffset(offset)
 }
 func (s *Storage) deleteByOffset(offset uint64) error {
-	node := simpleNode{}
+	node := simple_node.SimpleNode{}
 	err := node.ReadMeta(bytes.NewReader(s.mmap[offset:]))
 	if err != nil {
 		return err
 	}
-	if !node.meta.isValid() {
+	if !node.Meta.IsValid() {
 		return fmt.Errorf("invalid node for delete")
 	}
-	if node.meta.IsDeleted {
+	if node.Meta.IsDeleted {
 		return nil
 	}
 	node.Delete()

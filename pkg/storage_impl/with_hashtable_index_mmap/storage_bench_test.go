@@ -1,4 +1,4 @@
-package simple_mmap
+package with_hashtable_index_mmap
 
 import (
 	"strconv"
@@ -8,11 +8,11 @@ import (
 	"github.com/paragor/parabase/internal/tests/storage_engine_bench"
 )
 
-func Benchmark_SimpleMmap_Seq(b *testing.B) {
+func Benchmark_WithHashTableIndexMmap_Seq(b *testing.B) {
 	for _, count := range []int{100, 1_000, 10_000} {
 		for _, option := range []storage_engine_bench.BenchTimeTrackOption{storage_engine_bench.OnlyWriteOption, storage_engine_bench.OnlyReadOption} {
-			b.Run(string(option) + strconv.Itoa(count), func(b *testing.B) {
-				storage, cleanRes, err := createSimpleMmapStorage(b, strings.ReplaceAll(b.Name(), "/", "_"))
+			b.Run(string(option)+strconv.Itoa(count), func(b *testing.B) {
+				storage, cleanRes, err := createWithHashTableIndexMmapStorage(b, strings.ReplaceAll(b.Name(), "/", "_"))
 				if err != nil {
 					b.Error(err)
 					return

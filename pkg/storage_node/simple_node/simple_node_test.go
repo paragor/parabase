@@ -1,4 +1,4 @@
-package simple_mmap
+package simple_node
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 func Test_simpleNode_readAndWrite(t *testing.T) {
 	buf := bytes.NewBuffer(nil)
-	node := simpleNode{}
+	node := SimpleNode{}
 	kvChecker := tests.NewKeyValueChecker()
 	key := []byte("key_with_name")
 	node.SetKey(key)
@@ -20,14 +20,14 @@ func Test_simpleNode_readAndWrite(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	newNode := simpleNode{}
+	newNode := SimpleNode{}
 	err = newNode.Read(bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Error(err)
 	}
 
 	if !reflect.DeepEqual(node, newNode) {
-		t.Errorf("simpleNode not equals \ngot  %#v\nwant %#v", newNode, node)
+		t.Errorf("SimpleNode not equals \ngot  %#v\nwant %#v", newNode, node)
 	}
 
 }
