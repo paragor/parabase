@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -13,14 +14,10 @@ import (
 	"github.com/paragor/parabase/pkg/storage_node/simple_node"
 )
 
-// TODO
-// TODO 1) set value: cant read meta: unexpected EOF - когда вышли за размер файла
-// TODO
-
 type Storage struct {
 	file *os.File
 	mmap mmap.MMap
-	m sync.RWMutex
+	m    sync.RWMutex
 }
 
 func check(err error) {
@@ -57,6 +54,42 @@ func NewStorage(filePath string) (*Storage, error) {
 	return &Storage{file: file, mmap: mmapObj}, nil
 }
 
+func (s *Storage) extendStorageSize() error {
+	if err := s.mmap.Flush(); err != nil {
+		return err
+	}
+	err := s.mmap.Unmap()
+	if err != nil {
+		return err
+	}
+	s.mmap = nil
+	stat, err := s.file.Stat()
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(s.file.Name(), os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	extendedSize := int(math.Min(float64(stat.Size()), 512 << 20))
+	_, err = file.Write([]byte(strings.Repeat(string(rune(0x0)), extendedSize)))
+	if err != nil {
+		return err
+	}
+	err = file.Close()
+	if err != nil {
+		return err
+	}
+	mmapObj, err := mmap.Map(s.file, mmap.RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("cant mmap database file: %w", err)
+	}
+	s.mmap = mmapObj
+
+	return err
+}
+
 func (s *Storage) Iterate(iterator func(key, value []byte) bool) error {
 	s.m.RLock()
 	defer s.m.RUnlock()
@@ -89,6 +122,12 @@ func (s *Storage) Set(key, value []byte) error {
 	node := simple_node.SimpleNode{}
 	node.SetKey(key)
 	node.SetValue(value)
+	if len(s.mmap) < int(offset+node.Meta.GetNodeSize()) {
+		err = s.extendStorageSize()
+		if err != nil {
+			return err
+		}
+	}
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
 	return node.Write(buffer)

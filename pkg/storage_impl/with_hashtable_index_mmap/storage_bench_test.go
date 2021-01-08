@@ -26,7 +26,7 @@ func Benchmark_WithHashTableIndexMmap_Seq(b *testing.B) {
 }
 
 func Benchmark_WithHashTableIndexMmap_ConcurrentWrite(b *testing.B) {
-	for _, count := range []int{1_000, 10_000} {
+	for _, count := range []int{1_000, 200_000} {
 		b.Run(strconv.Itoa(count), func(b *testing.B) {
 			storage, cleanRes, err := createWithHashTableIndexMmapStorage(b, strings.ReplaceAll(b.Name(), "/", "_"))
 			if err != nil {

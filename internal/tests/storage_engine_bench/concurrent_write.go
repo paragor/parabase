@@ -20,7 +20,7 @@ func ConcurrentWriteBench(b *testing.B, storage engine.StorageEngine, keysCount 
 	}
 
 	wg := sync.WaitGroup{}
-	groups := [][]int{}
+	var groups [][]int
 	prev := 0
 	for i := 0; i < goroutines-1; i++ {
 		group := int(math.Floor(float64(keysCount / goroutines)))
