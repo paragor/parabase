@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/edsrzf/mmap-go"
 	"github.com/paragor/parabase/pkg/engine"
@@ -19,6 +20,7 @@ import (
 type Storage struct {
 	file      *os.File
 	mmap      mmap.MMap
+	m         sync.RWMutex
 	index     map[string]uint64
 	maxOffset uint64
 }
@@ -66,10 +68,24 @@ func (s *Storage) updateIndex() error {
 	}, false)
 }
 
+func (s *Storage) Iterate(iterator func(key, value []byte) bool) error {
+	s.m.RLock()
+	defer s.m.RUnlock()
+	return s.iterate(func(offset uint64, node simple_node.SimpleNode) bool {
+		return iterator(node.Key, node.Value)
+	}, true)
+}
+
 func (s *Storage) Set(key, value []byte) error {
-	err := s.Delete(key)
-	if err != nil {
-		return err
+	s.m.Lock()
+	defer s.m.Unlock()
+	//delete
+	if offset, ok := s.index[string(key)]; ok {
+		delete(s.index, string(key))
+		err := s.deleteByOffset(offset)
+		if err != nil {
+			return err
+		}
 	}
 	offset := s.maxOffset
 	node := simple_node.SimpleNode{}
@@ -77,7 +93,7 @@ func (s *Storage) Set(key, value []byte) error {
 	node.SetValue(value)
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
-	err = node.Write(buffer)
+	err := node.Write(buffer)
 	if err == nil {
 		s.index[string(key)] = offset
 		s.maxOffset = offset + node.Meta.GetNodeSize()
@@ -131,6 +147,8 @@ func (s *Storage) iterate(iterator func(offset uint64, node simple_node.SimpleNo
 }
 
 func (s *Storage) Get(key []byte) ([]byte, error) {
+	s.m.RLock()
+	defer s.m.RUnlock()
 	offset, ok := s.index[string(key)]
 	if !ok {
 		return nil, engine.ErrorNotFound
@@ -150,6 +168,8 @@ func (s *Storage) Get(key []byte) ([]byte, error) {
 	return node.Value, nil
 }
 func (s *Storage) Delete(key []byte) error {
+	s.m.Lock()
+	defer s.m.Unlock()
 	offset, ok := s.index[string(key)]
 	if !ok {
 		return nil

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/edsrzf/mmap-go"
 	"github.com/paragor/parabase/pkg/engine"
@@ -19,6 +20,7 @@ import (
 type Storage struct {
 	file *os.File
 	mmap mmap.MMap
+	m sync.RWMutex
 }
 
 func check(err error) {
@@ -55,7 +57,17 @@ func NewStorage(filePath string) (*Storage, error) {
 	return &Storage{file: file, mmap: mmapObj}, nil
 }
 
+func (s *Storage) Iterate(iterator func(key, value []byte) bool) error {
+	s.m.RLock()
+	defer s.m.RUnlock()
+	return s.iterate(func(offset uint64, node simple_node.SimpleNode) bool {
+		return iterator(node.Key, node.Value)
+	}, true)
+}
+
 func (s *Storage) Set(key, value []byte) error {
+	s.m.Lock()
+	defer s.m.Unlock()
 	offset := uint64(0)
 	var innerErr error = nil
 	err := s.iterate(func(curOffset uint64, node simple_node.SimpleNode) bool {
@@ -128,6 +140,8 @@ func (s *Storage) iterate(iterator func(offset uint64, node simple_node.SimpleNo
 }
 
 func (s *Storage) Get(key []byte) ([]byte, error) {
+	s.m.RLock()
+	defer s.m.RUnlock()
 	var value []byte
 	found := false
 	err := s.iterate(func(offset uint64, node simple_node.SimpleNode) bool {
@@ -148,6 +162,8 @@ func (s *Storage) Get(key []byte) ([]byte, error) {
 	return value, nil
 }
 func (s *Storage) Delete(key []byte) error {
+	s.m.Lock()
+	defer s.m.Unlock()
 	offset := uint64(0)
 	found := false
 	err := s.iterate(func(curOffset uint64, curNode simple_node.SimpleNode) bool {
