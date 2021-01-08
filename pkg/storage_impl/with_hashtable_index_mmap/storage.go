@@ -132,11 +132,16 @@ func (s *Storage) Set(key, value []byte) error {
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
 	err := node.Write(buffer)
-	if err == nil {
-		s.index[string(key)] = offset
-		s.maxOffset = offset + node.Meta.GetNodeSize()
+	if err != nil {
+		return err
 	}
-	return err
+	err = s.mmap.Flush()
+	if err != nil {
+		return err
+	}
+	s.index[string(key)] = offset
+	s.maxOffset = offset + node.Meta.GetNodeSize()
+	return nil
 }
 
 // iterate
@@ -230,5 +235,13 @@ func (s *Storage) deleteByOffset(offset uint64) error {
 	node.Delete()
 	buffer := bytes.NewBuffer(s.mmap[offset:])
 	buffer.Reset()
-	return node.WriteMeta(buffer)
+	err =  node.WriteMeta(buffer)
+	if err != nil {
+		return err
+	}
+	err = s.mmap.Flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
