@@ -10,8 +10,8 @@ type MetaInfo struct {
 	IsDeleted bool
 	KeySize   uint64
 	ValueSize uint64
-	KeyCRC32  uint64
 
+	Reserved1 uint64
 	Reserved2 uint64
 }
 
@@ -103,7 +103,7 @@ func (s *SimpleNode) Write(writer io.Writer) error {
 }
 
 func (s *SimpleNode) ReadMeta(reader io.Reader) error {
-	for _, value := range []interface{}{&s.Meta.KeySize, &s.Meta.ValueSize, &s.Meta.IsDeleted, &s.Meta.KeyCRC32, &s.Meta.Reserved2} {
+	for _, value := range s.getMetaFieldsForSerialization() {
 		err := binary.Read(reader, binary.BigEndian, value)
 		if err != nil {
 			return err
@@ -111,8 +111,11 @@ func (s *SimpleNode) ReadMeta(reader io.Reader) error {
 	}
 	return nil
 }
+func (s *SimpleNode) getMetaFieldsForSerialization() []interface{} {
+	return []interface{}{&s.Meta.KeySize, &s.Meta.ValueSize, &s.Meta.IsDeleted, &s.Meta.Reserved1, &s.Meta.Reserved2}
+}
 func (s *SimpleNode) WriteMeta(writer io.Writer) error {
-	for _, value := range []interface{}{&s.Meta.KeySize, &s.Meta.ValueSize, &s.Meta.IsDeleted, &s.Meta.KeyCRC32, &s.Meta.Reserved2} {
+	for _, value := range s.getMetaFieldsForSerialization() {
 		err := binary.Write(writer, binary.BigEndian, value)
 		if err != nil {
 			return err

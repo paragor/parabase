@@ -6,7 +6,7 @@ fmt:
 
 .PHONY: test
 test:
-	go test ./pkg/...
+	go test ./pkg/... -count=1
 
 .PHONY: bench
 bench:
