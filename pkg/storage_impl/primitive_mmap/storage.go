@@ -72,7 +72,7 @@ func (s *Storage) extendStorageSize() error {
 	if err != nil {
 		return err
 	}
-	extendedSize := int(math.Min(float64(stat.Size()), 512 << 20))
+	extendedSize := int(math.Min(float64(stat.Size()), 512<<20))
 	_, err = file.Write([]byte(strings.Repeat(string(rune(0x0)), extendedSize)))
 	if err != nil {
 		return err

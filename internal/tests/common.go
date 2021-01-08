@@ -11,6 +11,14 @@ import (
 	"testing"
 )
 
+type BenchTimeTrackOption string
+
+const (
+	OnlyReadOption     BenchTimeTrackOption = "read_"
+	OnlyWriteOption                         = "write_"
+	WriteAndReadOption                      = "write_and_read"
+)
+
 func GenerateCleanTmpFilePath(t testing.TB, name string) (string, error) {
 	databasePath := path.Join(os.TempDir(), name+"__"+strconv.Itoa(rand.Int()))
 	_, err := os.Stat(databasePath)
